@@ -3,7 +3,6 @@ import type { Env } from "./index";
 import { allAtsTargets } from "./ats";
 import { serperSearch } from "./serper";
 import { postWebhook } from "./webhook";
-import { toCsv } from "./csv";
 import { DATE_RANGE_MAP, type AppConfig, type Job } from "./types";
 
 /** How long a job URL stays "seen" in KV before it can be re-notified. */
@@ -22,24 +21,6 @@ export interface RunSummary {
   sent: number;
 }
 
-/**
- * Result of a run. `csv` is populated only when WEBHOOK_OR_CSV=csv and the
- * caller asked for it (the HTTP /run handler turns it into a file download).
- */
-export interface RunResult extends RunSummary {
-  csv?: string;
-}
-
-/** Options controlling how a run delivers its results. */
-export interface RunOptions {
-  /**
-   * Whether the caller can hand a generated CSV back to the user (true for the
-   * HTTP /run endpoint, false for the cron `scheduled` path which has nowhere
-   * to write a file).
-   */
-  canDeliverCsv?: boolean;
-}
-
 interface SearchTask {
   country: string;
   query: string;
@@ -52,7 +33,7 @@ interface SearchTask {
  * Main entry point: builds every (country × query × date_range × ATS)
  * combination, searches Serper, dedupes against KV, and webhooks new jobs.
  */
-export async function runSearch(env: Env, opts: RunOptions = {}): Promise<RunResult> {
+export async function runSearch(env: Env): Promise<RunSummary> {
   const cfg = config as AppConfig;
   const tasks = buildTasks(cfg);
 
@@ -98,45 +79,18 @@ export async function runSearch(env: Env, opts: RunOptions = {}): Promise<RunRes
     if (!seen) fresh.push({ job, key });
   }
 
-  // 4. Deliver the new jobs — either to a CSV file (WEBHOOK_OR_CSV=csv,
-  //    recommended for local runs) or to the webhook (the default).
-  const mode = (env.WEBHOOK_OR_CSV ?? "webhook").trim().toLowerCase();
+  // 4. Webhook the new jobs in chunks, marking each chunk seen on success.
   let sent = 0;
-  let csv: string | undefined;
-
-  if (mode === "csv") {
-    if (opts.canDeliverCsv) {
-      // The HTTP /run handler returns this string as a downloadable file.
-      csv = toCsv(fresh.map((c) => c.job));
-      await Promise.all(
-        fresh.map((c) => env.SEEN_JOBS.put(c.key, "1", { expirationTtl: SEEN_TTL_SECONDS })),
-      );
-      sent = fresh.length;
-    } else {
-      // The cron path has nowhere to write a file; skip without marking seen
-      // so the jobs can still be exported on a later manual /run.
-      console.warn(
-        `WEBHOOK_OR_CSV=csv: found ${fresh.length} new job(s) but a scheduled/cron ` +
-          "run cannot write a file (sent=0). Trigger GET /run to download the CSV. " +
-          "Jobs were left unmarked so nothing is lost.",
-      );
-    }
-  } else {
-    // Webhook the new jobs in chunks, marking each chunk seen on success.
-    if (!env.WEBHOOK_URL) {
-      throw new Error("WEBHOOK_URL is not set (required unless WEBHOOK_OR_CSV=csv).");
-    }
-    for (let i = 0; i < fresh.length; i += WEBHOOK_CHUNK) {
-      const chunk = fresh.slice(i, i + WEBHOOK_CHUNK);
-      await postWebhook(
-        env.WEBHOOK_URL,
-        chunk.map((c) => c.job),
-      );
-      await Promise.all(
-        chunk.map((c) => env.SEEN_JOBS.put(c.key, "1", { expirationTtl: SEEN_TTL_SECONDS })),
-      );
-      sent += chunk.length;
-    }
+  for (let i = 0; i < fresh.length; i += WEBHOOK_CHUNK) {
+    const chunk = fresh.slice(i, i + WEBHOOK_CHUNK);
+    await postWebhook(
+      env.WEBHOOK_URL,
+      chunk.map((c) => c.job),
+    );
+    await Promise.all(
+      chunk.map((c) => env.SEEN_JOBS.put(c.key, "1", { expirationTtl: SEEN_TTL_SECONDS })),
+    );
+    sent += chunk.length;
   }
 
   const summary: RunSummary = {
@@ -147,7 +101,7 @@ export async function runSearch(env: Env, opts: RunOptions = {}): Promise<RunRes
     sent,
   };
   console.log("Run complete:", JSON.stringify(summary));
-  return { ...summary, csv };
+  return summary;
 }
 
 /** Build the cartesian product of config dimensions × every ATS in ats.json. */

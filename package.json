@@ -2,9 +2,10 @@
   "name": "directjobs-cron",
   "version": "1.0.0",
   "private": true,
-  "description": "Cloudflare Worker cron that searches Google (via Serper.dev) for jobs on ATS sites and webhooks new results.",
+  "description": "Direct Job Alerts is a Cloudflare Worker cron that searches Google (via Serper.dev) for jobs on ATS sites and webhooks new results.",
   "scripts": {
     "dev": "wrangler dev",
+    "export:csv": "node scripts/export-csv.mjs",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit"

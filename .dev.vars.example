@@ -1,11 +1,4 @@
 # Copy to `.dev.vars` for local development (`npm run dev`).
 # In production these are set as secrets via `wrangler secret put <NAME>`.
 SERPER_API_KEY=your_serper_api_key_here
-
-# Where results go: "webhook" (default) or "csv".
-# "csv" is recommended for local runs — `GET /run` returns the results as a
-# downloadable CSV file instead of POSTing to a webhook.
-WEBHOOK_OR_CSV=csv
-
-# Required only when WEBHOOK_OR_CSV=webhook.
 WEBHOOK_URL=https://example.com/your-webhook

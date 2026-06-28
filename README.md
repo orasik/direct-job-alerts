@@ -1,6 +1,6 @@
 # Direct Job Alerts
 
-<p style="text-align: center"><img width="592" height="562" alt="Direct Job Alerts" src="https://github.com/user-attachments/assets/dae5cc84-2ff7-4d2c-9afd-d620d2442d36" /></p>
+<p align="center"><img width="592" height="562" alt="Direct Job Alerts" src="https://github.com/user-attachments/assets/dae5cc84-2ff7-4d2c-9afd-d620d2442d36" /></p>
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) cron job that searches Google (via the [Serper.dev](https://serper.dev) API) for jobs posted on ATS (Applicant Tracking System) sites and sends new results to a webhook. Runs **once every 24 hours**. (you can change to run hourly if you want)
 
@@ -17,7 +17,7 @@ CloudFlare cost is FREE too.
 1. On its cron schedule the worker reads `config.json`.
 2. It builds the cartesian product of **countries × queries × date_range**, and runs each one against **every ATS in `ats.json`** — one Serper search per combination, e.g. `site:myworkdayjobs.com "Outside IR35"` with `gl=gb` and `tbs=qdr:d`.
 3. Organic results are collected, de-duplicated by URL, and checked against a Cloudflare KV store so jobs seen in a previous run are skipped.
-4. New jobs are delivered — either POSTed to your webhook (in batches of 100) or exported as a CSV file — and then marked as seen in KV. The destination is chosen by the `WEBHOOK_OR_CSV` env variable (see [Output](#output)).
+4. New jobs are POSTed to your webhook (in batches of 100) and then marked as seen in KV.
 
 ## Configuration — `config.json`
 
@@ -29,11 +29,9 @@ Each key is an array of strings that you can customise for your search:
 | `queries`    | Search terms (see quoting below)         | `["\"Outside IR35\"", "Senior Java Engineer"]`       |
 | `date_range` | Time filters (see below)                 | `["past_day"]`                                       |
 
-Every search runs against **all** ATS sites listed in **`ats.json`** (a friendly
-name → hostname map). Add or remove providers by editing `ats.json` and
-redeploying — no code change needed. Duplicate hostnames are de-duplicated
-automatically. The list currently includes Ashby, Workable, Workday,
-Greenhouse, Lever, SmartRecruiters, and more — see `ats.json` for the full set.
+Every search runs against **all** ATS sites listed in **`ats.json`** (a friendly name → hostname map). Add or remove providers by editing `ats.json` and redeploying, no code change needed. 
+
+Duplicate hostnames are de-duplicated automatically. The list currently includes Ashby, Workable, Workday, Greenhouse, Lever, SmartRecruiters, and more. See `ats.json` for the full set.
 
 ### Search terms (quoting)
 
@@ -55,24 +53,7 @@ Each `queries` entry is placed **verbatim** after the `site:` filter, so you con
 | `past_month`  | `qdr:m`   |
 | `past_year`   | `qdr:y`   |
 
-Editing `config.json` requires a redeploy (`npm run deploy`) — it is bundled into the worker.
-
-## Output
-
-The `WEBHOOK_OR_CSV` env variable decides where results go:
-
-| `WEBHOOK_OR_CSV` | Behaviour                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| `webhook` (default) | New jobs are POSTed to `WEBHOOK_URL` in batches of 100.                                     |
-| `csv`            | `GET /run` returns the new jobs as a downloadable CSV file. **Recommended for local runs.**    |
-
-CSV mode is delivered only over the HTTP `GET /run` endpoint (a worker cron has nowhere to write a file), so it's intended for local use:
-
-```bash
-curl "http://localhost:8787/run" -o jobs.csv   # or just open the URL in a browser
-```
-
-The CSV has a header row and one row per job: `title, url, snippet, date, query, ats, country`. New jobs are still de-duplicated against KV, so a second run only contains jobs not seen before.
+Editing `config.json` requires a redeploy (`npm run deploy`), it is bundled into the worker.
 
 ## Webhook payload
 
@@ -122,18 +103,23 @@ npm run deploy
 ## Local development
 
 ```bash
-cp .dev.vars.example .dev.vars   # fill in your key; set WEBHOOK_OR_CSV=csv for local runs
+cp .dev.vars.example .dev.vars   # fill in your key + webhook
 npm run dev                      # then hit http://localhost:8787/run
 ```
 
-For local runs, set `WEBHOOK_OR_CSV=csv` in `.dev.vars` so a run downloads a CSV instead of needing a webhook:
+- `GET /run` triggers a search run manually and returns a JSON summary.
+- To test the cron path locally: `curl "http://localhost:8787/cdn-cgi/handler/scheduled"`.
+
+### Export a CSV locally
+
+To get the current results as a CSV file on disk — no dev server, no webhook needed:
 
 ```bash
-curl "http://localhost:8787/run" -o jobs.csv
+npm run export:csv            # writes ./jobs.csv
+npm run export:csv out.csv    # writes ./out.csv
 ```
 
-- `GET /run` triggers a search run manually. In webhook mode it returns a JSON summary; in CSV mode it returns the new jobs as a downloadable CSV file (run counts are in the `X-Run-Summary` response header), or `No new jobs found.` when there's nothing new.
-- To test the cron path locally: `curl "http://localhost:8787/cdn-cgi/handler/scheduled"`. Note this returns `ok` and, in CSV mode, **does not** produce a file (a cron has nowhere to write one) — use `GET /run` to download a CSV.
+It runs the same Serper search as the worker and writes the URL-deduplicated results straight to the file, one row per job (`title, url, snippet, date, query, ats, country`). It reads `SERPER_API_KEY` from the environment or `.dev.vars`. (This path doesn't use the KV "seen" store, so it always writes the full current result set.)
 
 ## Changing the schedule
 
