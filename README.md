@@ -1,5 +1,6 @@
 # Direct Job Alerts
 
+<img width="1184" height="1125" alt="ChatGPT Image Jun 28, 2026, 10_47_43 AM" src="https://github.com/user-attachments/assets/dae5cc84-2ff7-4d2c-9afd-d620d2442d36" />
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) cron job that searches Google (via the [Serper.dev](https://serper.dev) API) for jobs posted on ATS (Applicant Tracking System) sites and sends new results to a webhook. Runs **once every 24 hours**. (you can change to run hourly if you want)
 
