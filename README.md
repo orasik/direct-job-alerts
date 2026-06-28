@@ -17,7 +17,7 @@ CloudFlare cost is FREE too.
 1. On its cron schedule the worker reads `config.json`.
 2. It builds the cartesian product of **countries × queries × date_range**, and runs each one against **every ATS in `ats.json`** — one Serper search per combination, e.g. `site:myworkdayjobs.com "Outside IR35"` with `gl=gb` and `tbs=qdr:d`.
 3. Organic results are collected, de-duplicated by URL, and checked against a Cloudflare KV store so jobs seen in a previous run are skipped.
-4. New jobs are POSTed to your webhook (in batches of 100) and then marked as seen in KV.
+4. New jobs are delivered — either POSTed to your webhook (in batches of 100) or exported as a CSV file — and then marked as seen in KV. The destination is chosen by the `WEBHOOK_OR_CSV` env variable (see [Output](#output)).
 
 ## Configuration — `config.json`
 
@@ -56,6 +56,23 @@ Each `queries` entry is placed **verbatim** after the `site:` filter, so you con
 | `past_year`   | `qdr:y`   |
 
 Editing `config.json` requires a redeploy (`npm run deploy`) — it is bundled into the worker.
+
+## Output
+
+The `WEBHOOK_OR_CSV` env variable decides where results go:
+
+| `WEBHOOK_OR_CSV` | Behaviour                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `webhook` (default) | New jobs are POSTed to `WEBHOOK_URL` in batches of 100.                                     |
+| `csv`            | `GET /run` returns the new jobs as a downloadable CSV file. **Recommended for local runs.**    |
+
+CSV mode is delivered only over the HTTP `GET /run` endpoint (a worker cron has nowhere to write a file), so it's intended for local use:
+
+```bash
+curl "http://localhost:8787/run" -o jobs.csv   # or just open the URL in a browser
+```
+
+The CSV has a header row and one row per job: `title, url, snippet, date, query, ats, country`. New jobs are still de-duplicated against KV, so a second run only contains jobs not seen before.
 
 ## Webhook payload
 
@@ -96,7 +113,7 @@ npx wrangler kv namespace create SEEN_JOBS
 
 # 4. Add your secrets
 npx wrangler secret put SERPER_API_KEY
-npx wrangler secret put WEBHOOK_URL
+npx wrangler secret put WEBHOOK_URL   # destination for webhook mode (the default)
 
 # 5. Deploy
 npm run deploy
@@ -105,12 +122,18 @@ npm run deploy
 ## Local development
 
 ```bash
-cp .dev.vars.example .dev.vars   # fill in your key + webhook
+cp .dev.vars.example .dev.vars   # fill in your key; set WEBHOOK_OR_CSV=csv for local runs
 npm run dev                      # then hit http://localhost:8787/run
 ```
 
-- `GET /run` triggers a search run manually and returns a JSON summary.
-- To test the cron path locally: `curl "http://localhost:8787/cdn-cgi/handler/scheduled"`.
+For local runs, set `WEBHOOK_OR_CSV=csv` in `.dev.vars` so a run downloads a CSV instead of needing a webhook:
+
+```bash
+curl "http://localhost:8787/run" -o jobs.csv
+```
+
+- `GET /run` triggers a search run manually. In webhook mode it returns a JSON summary; in CSV mode it returns the new jobs as a downloadable CSV file (run counts are in the `X-Run-Summary` response header), or `No new jobs found.` when there's nothing new.
+- To test the cron path locally: `curl "http://localhost:8787/cdn-cgi/handler/scheduled"`. Note this returns `ok` and, in CSV mode, **does not** produce a file (a cron has nowhere to write one) — use `GET /run` to download a CSV.
 
 ## Changing the schedule
 
