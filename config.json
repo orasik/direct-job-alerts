@@ -1,0 +1,5 @@
+{
+  "countries": ["gb", "us"],
+  "queries": ["\"Outside IR35\"", "Senior Java Engineer"],
+  "date_range": ["past_day"]
+}

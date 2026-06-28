@@ -1,0 +1,21 @@
+{
+  "name": "directjobs-cron",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker cron that searches Google (via Serper.dev) for jobs on ATS sites and webhooks new results.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^4.20.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260625.1": true
+  }
+}
